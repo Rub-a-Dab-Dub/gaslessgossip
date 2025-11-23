@@ -10,13 +10,13 @@ contract GaslessGossipTest is Test {
     MockERC20 public mockToken;
 
     address admin = makeAddr("admin");
-    address user1 = makeAddr("user1");
-    address user2 = makeAddr("user2");
-    address recipient = makeAddr("recipient");
     address roomCreator = makeAddr("roomCreator");
 
     string public constant USERNAME1 = "alice";
     string public constant USERNAME2 = "bob";
+
+    address aliceWallet;
+    address bobWallet;
 
     event TipSent(
         address indexed sender,
@@ -51,22 +51,17 @@ contract GaslessGossipTest is Test {
 
         payments = new GaslessGossip(admin, DEFAULT_FEE_BPS);
 
-        // Fund users with ETH
-        vm.deal(user1, 10 ether);
-        vm.deal(user2, 10 ether);
-        vm.deal(admin, 10 ether);
-
-        // Mint tokens to users
-        vm.prank(admin);
-        mockToken.mint(user1, 10000 ether);
-        vm.prank(admin);
-        mockToken.mint(user2, 10000 ether);
-
         // Create users (admin is paymaster)
         vm.prank(admin);
         payments.createUser(USERNAME1);
         vm.prank(admin);
         payments.createUser(USERNAME2);
+
+        aliceWallet = payments.getUserOnchainAddress(USERNAME1);
+        bobWallet = payments.getUserOnchainAddress(USERNAME2);
+
+        // No global funding—handle per test
+        vm.deal(admin, 10 ether);
     }
 
     /* ---------------------------- USER REGISTRATION ---------------------------- */
@@ -104,7 +99,7 @@ contract GaslessGossipTest is Test {
     function test_createUserNonPaymasterReverts() public {
         string memory newUser = "unauth";
         vm.expectRevert();
-        vm.prank(user1);
+        vm.prank(aliceWallet);
         payments.createUser(newUser);
     }
 
@@ -148,7 +143,7 @@ contract GaslessGossipTest is Test {
     function test_updateUsernameNonPaymasterReverts() public {
         string memory newUser = "unauth_update";
         vm.expectRevert();
-        vm.prank(user1);
+        vm.prank(aliceWallet);
         payments.updateUsername(USERNAME1, newUser);
     }
 
@@ -159,14 +154,18 @@ contract GaslessGossipTest is Test {
         uint256 expectedFee = (tipAmount * DEFAULT_FEE_BPS) / 10000;
         uint256 expectedNet = tipAmount - expectedFee;
 
-        vm.expectEmit(false, false, false, false);
-        emit TipSent(user1, recipient, tipAmount, expectedFee, expectedNet, "tip", block.timestamp);
+        // Fund sender wallet
+        vm.deal(aliceWallet, tipAmount);
 
-        vm.prank(user1);
-        payments.tipUser{value: tipAmount}(recipient, tipAmount, address(0), "tip");
+        vm.expectEmit(false, false, false, false);
+        emit TipSent(aliceWallet, bobWallet, tipAmount, expectedFee, expectedNet, "tip", block.timestamp);
+
+        vm.prank(admin);
+        payments.tipUser(USERNAME2, tipAmount, address(0), USERNAME1, "tip");
 
         assertEq(payments.accumulatedFees(), expectedFee);
-        assertEq(recipient.balance, expectedNet);
+        assertEq(bobWallet.balance, expectedNet);
+        assertEq(aliceWallet.balance, 0);
     }
 
     function test_tipUserERC20() public {
@@ -174,46 +173,57 @@ contract GaslessGossipTest is Test {
         uint256 expectedFee = (tipAmount * DEFAULT_FEE_BPS) / 10000;
         uint256 expectedNet = tipAmount - expectedFee;
 
-        vm.prank(user1);
-        mockToken.approve(address(payments), tipAmount);
+        // Fund sender wallet
+        vm.prank(admin);
+        mockToken.mint(aliceWallet, tipAmount);
 
         vm.expectEmit(false, false, false, false);
-        emit TipSent(user1, recipient, tipAmount, expectedFee, expectedNet, "tip", block.timestamp);
+        emit TipSent(aliceWallet, bobWallet, tipAmount, expectedFee, expectedNet, "tip", block.timestamp);
 
-        vm.prank(user1);
-        payments.tipUser(recipient, tipAmount, address(mockToken), "tip");
+        vm.prank(admin);
+        payments.tipUser(USERNAME2, tipAmount, address(mockToken), USERNAME1, "tip");
 
         assertEq(payments.accumulatedTokenFees(address(mockToken)), expectedFee);
-        assertEq(mockToken.balanceOf(recipient), expectedNet);
+        assertEq(mockToken.balanceOf(bobWallet), expectedNet);
+        assertEq(mockToken.balanceOf(aliceWallet), 0);
     }
 
     function test_tipUserSelfTipReverts() public {
         uint256 tipAmount = 1 ether;
-        vm.prank(user1);
+        vm.deal(aliceWallet, tipAmount);
+        vm.prank(admin);
         vm.expectRevert();
-        payments.tipUser{value: tipAmount}(user1, tipAmount, address(0), "");
+        payments.tipUser(USERNAME1, tipAmount, address(0), USERNAME1, "");
     }
 
     function test_tipUserZeroAmountReverts() public {
-        vm.prank(user1);
+        vm.prank(admin);
         vm.expectRevert();
-        payments.tipUser(recipient, 0, address(0), "");
+        payments.tipUser(USERNAME2, 0, address(0), USERNAME1, "");
     }
 
-    function test_tipUserAmountMismatchReverts() public {
+    function test_tipUserNonPaymasterReverts() public {
         uint256 tipAmount = 1 ether;
-        vm.prank(user1);
+        vm.deal(aliceWallet, tipAmount);
+        vm.prank(aliceWallet);
         vm.expectRevert();
-        payments.tipUser{value: 0.5 ether}(recipient, tipAmount, address(0), "");
+        payments.tipUser(USERNAME2, tipAmount, address(0), USERNAME1, "");
     }
 
-    function test_tipUserUnexpectedETHReverts() public {
-        uint256 tipAmount = 100 ether;
-        vm.prank(user1);
-        mockToken.approve(address(payments), tipAmount);
-        vm.prank(user1);
+    function test_tipUserInvalidUsernameReverts() public {
+        uint256 tipAmount = 1 ether;
+        vm.deal(aliceWallet, tipAmount);
+        vm.prank(admin);
         vm.expectRevert();
-        payments.tipUser{value: 0.1 ether}(recipient, tipAmount, address(mockToken), "");
+        payments.tipUser(USERNAME2, tipAmount, address(0), "ghost", "");
+    }
+
+    function test_tipUserEmptyUsernameReverts() public {
+        uint256 tipAmount = 1 ether;
+        vm.deal(aliceWallet, tipAmount);
+        vm.prank(admin);
+        vm.expectRevert();
+        payments.tipUser(USERNAME2, tipAmount, address(0), "", "");
     }
 
     /* ---------------------------- PAY ROOM ENTRY ---------------------------- */
@@ -224,14 +234,18 @@ contract GaslessGossipTest is Test {
         uint256 expectedFee = (entryFee * DEFAULT_FEE_BPS) / 10000;
         uint256 expectedCreatorAmount = entryFee - expectedFee;
 
-        vm.expectEmit(false, false, false, false);
-        emit RoomEntryPaid(user1, roomId, roomCreator, entryFee, expectedFee, expectedCreatorAmount, block.timestamp);
+        // Fund sender wallet
+        vm.deal(aliceWallet, entryFee);
 
-        vm.prank(user1);
-        payments.payRoomEntry{value: entryFee}(roomId, roomCreator, entryFee, address(0));
+        vm.expectEmit(false, false, false, false);
+        emit RoomEntryPaid(aliceWallet, roomId, roomCreator, entryFee, expectedFee, expectedCreatorAmount, block.timestamp);
+
+        vm.prank(admin);
+        payments.payRoomEntry(roomId, roomCreator, entryFee, address(0), USERNAME1);
 
         assertEq(payments.accumulatedFees(), expectedFee);
         assertEq(roomCreator.balance, expectedCreatorAmount);
+        assertEq(aliceWallet.balance, 0);
     }
 
     function test_payRoomEntryERC20() public {
@@ -240,32 +254,53 @@ contract GaslessGossipTest is Test {
         uint256 expectedFee = (entryFee * DEFAULT_FEE_BPS) / 10000;
         uint256 expectedCreatorAmount = entryFee - expectedFee;
 
-        vm.prank(user1);
-        mockToken.approve(address(payments), entryFee);
+        // Fund sender wallet
+        vm.prank(admin);
+        mockToken.mint(aliceWallet, entryFee);
 
         vm.expectEmit(false, false, false, false);
-        emit RoomEntryPaid(user1, roomId, roomCreator, entryFee, expectedFee, expectedCreatorAmount, block.timestamp);
+        emit RoomEntryPaid(aliceWallet, roomId, roomCreator, entryFee, expectedFee, expectedCreatorAmount, block.timestamp);
 
-        vm.prank(user1);
-        payments.payRoomEntry(roomId, roomCreator, entryFee, address(mockToken));
+        vm.prank(admin);
+        payments.payRoomEntry(roomId, roomCreator, entryFee, address(mockToken), USERNAME1);
 
         assertEq(payments.accumulatedTokenFees(address(mockToken)), expectedFee);
         assertEq(mockToken.balanceOf(roomCreator), expectedCreatorAmount);
+        assertEq(mockToken.balanceOf(aliceWallet), 0);
     }
 
     function test_payRoomEntryZeroCreatorReverts() public {
         uint256 roomId = 1;
         uint256 entryFee = 0.1 ether;
-        vm.prank(user1);
+        vm.deal(aliceWallet, entryFee);
+        vm.prank(admin);
         vm.expectRevert();
-        payments.payRoomEntry{value: entryFee}(roomId, address(0), entryFee, address(0));
+        payments.payRoomEntry(roomId, address(0), entryFee, address(0), USERNAME1);
     }
 
     function test_payRoomEntryZeroAmountReverts() public {
         uint256 roomId = 1;
-        vm.prank(user1);
+        vm.prank(admin);
         vm.expectRevert();
-        payments.payRoomEntry(roomId, roomCreator, 0, address(0));
+        payments.payRoomEntry(roomId, roomCreator, 0, address(0), USERNAME1);
+    }
+
+    function test_payRoomEntryNonPaymasterReverts() public {
+        uint256 roomId = 1;
+        uint256 entryFee = 0.1 ether;
+        vm.deal(aliceWallet, entryFee);
+        vm.prank(aliceWallet);
+        vm.expectRevert();
+        payments.payRoomEntry(roomId, roomCreator, entryFee, address(0), USERNAME1);
+    }
+
+    function test_payRoomEntryInvalidUsernameReverts() public {
+        uint256 roomId = 1;
+        uint256 entryFee = 0.1 ether;
+        vm.deal(aliceWallet, entryFee);
+        vm.prank(admin);
+        vm.expectRevert();
+        payments.payRoomEntry(roomId, roomCreator, entryFee, address(0), "ghost");
     }
 
     /* ---------------------------- SEND TOKENS ---------------------------- */
@@ -273,41 +308,64 @@ contract GaslessGossipTest is Test {
     function test_sendTokensETH() public {
         uint256 sendAmount = 0.2 ether;
 
+        // Fund sender wallet
+        vm.deal(aliceWallet, sendAmount);
+
         vm.expectEmit(false, false, false, false);
-        emit TokensSent(user1, recipient, sendAmount, block.timestamp);
+        emit TokensSent(aliceWallet, bobWallet, sendAmount, block.timestamp);
 
-        vm.prank(user1);
-        payments.sendTokens{value: sendAmount}(recipient, sendAmount, address(0));
+        vm.prank(admin);
+        payments.sendTokens(USERNAME2, sendAmount, address(0), USERNAME1);
 
-        assertEq(recipient.balance, sendAmount);
+        assertEq(bobWallet.balance, sendAmount);
+        assertEq(aliceWallet.balance, 0);
     }
 
     function test_sendTokensERC20() public {
         uint256 sendAmount = 10 ether;
 
-        vm.prank(user1);
-        mockToken.approve(address(payments), sendAmount);
+        // Fund sender wallet
+        vm.prank(admin);
+        mockToken.mint(aliceWallet, sendAmount);
 
         vm.expectEmit(false, false, false, false);
-        emit TokensSent(user1, recipient, sendAmount, block.timestamp);
+        emit TokensSent(aliceWallet, bobWallet, sendAmount, block.timestamp);
 
-        vm.prank(user1);
-        payments.sendTokens(recipient, sendAmount, address(mockToken));
+        vm.prank(admin);
+        payments.sendTokens(USERNAME2, sendAmount, address(mockToken), USERNAME1);
 
-        assertEq(mockToken.balanceOf(recipient), sendAmount);
+        assertEq(mockToken.balanceOf(bobWallet), sendAmount);
+        assertEq(mockToken.balanceOf(aliceWallet), 0);
     }
 
     function test_sendTokensSelfSendReverts() public {
         uint256 sendAmount = 0.1 ether;
-        vm.prank(user1);
+        vm.deal(aliceWallet, sendAmount);
+        vm.prank(admin);
         vm.expectRevert();
-        payments.sendTokens{value: sendAmount}(user1, sendAmount, address(0));
+        payments.sendTokens(USERNAME1, sendAmount, address(0), USERNAME1);
     }
 
     function test_sendTokensZeroAmountReverts() public {
-        vm.prank(user1);
+        vm.prank(admin);
         vm.expectRevert();
-        payments.sendTokens(recipient, 0, address(0));
+        payments.sendTokens(USERNAME2, 0, address(0), USERNAME1);
+    }
+
+    function test_sendTokensNonPaymasterReverts() public {
+        uint256 sendAmount = 0.1 ether;
+        vm.deal(aliceWallet, sendAmount);
+        vm.prank(aliceWallet);
+        vm.expectRevert();
+        payments.sendTokens(USERNAME2, sendAmount, address(0), USERNAME1);
+    }
+
+    function test_sendTokensInvalidUsernameReverts() public {
+        uint256 sendAmount = 0.1 ether;
+        vm.deal(aliceWallet, sendAmount);
+        vm.prank(admin);
+        vm.expectRevert();
+        payments.sendTokens(USERNAME2, sendAmount, address(0), "ghost");
     }
 
     /* ---------------------------- WITHDRAW FROM USER WALLET ---------------------------- */
@@ -336,8 +394,8 @@ contract GaslessGossipTest is Test {
         uint256 withdrawAmount = 5 ether;
         address withdrawTo = makeAddr("withdrawTo");
 
-        vm.prank(user1);
-        mockToken.transfer(userWallet, depositAmount);
+        vm.prank(admin);
+        mockToken.mint(userWallet, depositAmount);
 
         vm.expectEmit(false, false, false, false);
         emit UserWithdrawal(userWallet, withdrawTo, address(mockToken), withdrawAmount, block.timestamp);
@@ -351,6 +409,7 @@ contract GaslessGossipTest is Test {
     }
 
     function test_withdrawFromUserWalletInsufficientBalanceReverts() public {
+        // No funding to wallet, so balance=0 <1 ether
         uint256 withdrawAmount = 1 ether;
         address withdrawTo = makeAddr("withdrawTo");
 
@@ -374,7 +433,7 @@ contract GaslessGossipTest is Test {
         address withdrawTo = makeAddr("withdrawTo");
         uint256 withdrawAmount = 0.1 ether;
 
-        vm.prank(user1);
+        vm.prank(aliceWallet);
         vm.expectRevert();
         payments.withdrawFromUserWallet(address(0), USERNAME1, withdrawTo, withdrawAmount);
     }
@@ -393,8 +452,10 @@ contract GaslessGossipTest is Test {
         uint256 tipAmount = 1 ether;
         uint256 expectedFee = (tipAmount * DEFAULT_FEE_BPS) / 10000;
 
-        vm.prank(user1);
-        payments.tipUser{value: tipAmount}(recipient, tipAmount, address(0), "");
+        // Fund for tip
+        vm.deal(aliceWallet, tipAmount);
+        vm.prank(admin);
+        payments.tipUser(USERNAME2, tipAmount, address(0), USERNAME1, "");
 
         vm.expectEmit(false, false, false, false);
         emit FeesWithdrawn(admin, expectedFee, block.timestamp);
@@ -410,10 +471,11 @@ contract GaslessGossipTest is Test {
         uint256 tipAmount = 100 ether;
         uint256 expectedFee = (tipAmount * DEFAULT_FEE_BPS) / 10000;
 
-        vm.prank(user1);
-        mockToken.approve(address(payments), tipAmount);
-        vm.prank(user1);
-        payments.tipUser(recipient, tipAmount, address(mockToken), "");
+        // Fund for tip
+        vm.prank(admin);
+        mockToken.mint(aliceWallet, tipAmount);
+        vm.prank(admin);
+        payments.tipUser(USERNAME2, tipAmount, address(mockToken), USERNAME1, "");
 
         vm.prank(admin);
         payments.withdrawTokenFees(address(mockToken), admin, expectedFee);
@@ -442,9 +504,9 @@ contract GaslessGossipTest is Test {
 
     function test_withdrawETHFeesNonOwnerReverts() public {
         vm.deal(address(payments), 1 ether);
-        vm.prank(user1);
+        vm.prank(aliceWallet);
         vm.expectRevert();
-        payments.withdrawETHFees(payable(user1), 0.1 ether);
+        payments.withdrawETHFees(payable(aliceWallet), 0.1 ether);
     }
 
     /* ---------------------------- PLATFORM FEE UPDATE ---------------------------- */
@@ -468,7 +530,7 @@ contract GaslessGossipTest is Test {
     }
 
     function test_setPlatformFeeNonOwnerReverts() public {
-        vm.prank(user1);
+        vm.prank(aliceWallet);
         vm.expectRevert();
         payments.setPlatformFee(100);
     }
@@ -491,7 +553,7 @@ contract GaslessGossipTest is Test {
     }
 
     function test_pauseNonOwnerReverts() public {
-        vm.prank(user1);
+        vm.prank(aliceWallet);
         vm.expectRevert();
         payments.pause();
     }
@@ -501,9 +563,10 @@ contract GaslessGossipTest is Test {
         payments.pause();
 
         uint256 tipAmount = 0.1 ether;
-        vm.prank(user1);
+        vm.deal(aliceWallet, tipAmount);
+        vm.prank(admin);
         vm.expectRevert();
-        payments.tipUser{value: tipAmount}(recipient, tipAmount, address(0), "");
+        payments.tipUser(USERNAME2, tipAmount, address(0), USERNAME1, "");
 
         vm.prank(admin);
         vm.expectRevert();
@@ -544,8 +607,8 @@ contract GaslessGossipTest is Test {
     function test_getUserWalletBalanceERC20() public {
         address userWallet = payments.getUserOnchainAddress(USERNAME1);
         uint256 deposit = 15 ether;
-        vm.prank(user1);
-        mockToken.transfer(userWallet, deposit);
+        vm.prank(admin);
+        mockToken.mint(userWallet, deposit);
 
         uint256 balance = payments.getUserWalletBalance(USERNAME1, address(mockToken));
         assertEq(balance, deposit);
@@ -561,17 +624,19 @@ contract GaslessGossipTest is Test {
 
     /* ---------------------------- EDGE CASES ---------------------------- */
 
-    function test_tipUserZeroAddressReverts() public {
+    function test_tipUserEmptyRecipientnameReverts() public {
         uint256 tipAmount = 1 ether;
-        vm.prank(user1);
+        vm.deal(aliceWallet, tipAmount);
+        vm.prank(admin);
         vm.expectRevert();
-        payments.tipUser{value: tipAmount}(address(0), tipAmount, address(0), "");
+        payments.tipUser("", tipAmount, address(0), USERNAME1, "");
     }
 
-    function test_sendTokensZeroAddressReverts() public {
+    function test_sendTokensEmptyRecipientnameReverts() public {
         uint256 sendAmount = 0.1 ether;
-        vm.prank(user1);
+        vm.deal(aliceWallet, sendAmount);
+        vm.prank(admin);
         vm.expectRevert();
-        payments.sendTokens{value: sendAmount}(address(0), sendAmount, address(0));
+        payments.sendTokens("", sendAmount, address(0), USERNAME1);
     }
 }

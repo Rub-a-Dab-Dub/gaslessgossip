@@ -355,7 +355,7 @@ export default function Landing() {
               <ul className="grid grid-cols-3 place-items-center md:place-items-start gap-8 mt-16">
                 <li>
                   <div className="text-3xl lg:text-4xl text-white font-fredoka">
-                    12k+
+                    {roomCount}
                   </div>
                   <div className="text-sm mt-2 lg:text-xl text-[#A3A9A6]">
                     Rooms Created
@@ -364,7 +364,7 @@ export default function Landing() {
 
                 <li>
                   <div className="text-3xl lg:text-4xl text-white font-fredoka">
-                    45k+
+                    {userCount}
                   </div>
                   <div className="text-sm mt-2 lg:text-xl text-[#A3A9A6]">
                     Active Users
@@ -376,7 +376,7 @@ export default function Landing() {
                     8.3M+
                   </div>
                   <div className="text-sm mt-2 lg:text-xl text-[#A3A9A6]">
-                    Tokens Earned
+                    Tips Earned
                   </div>
                 </li>
               </ul>
