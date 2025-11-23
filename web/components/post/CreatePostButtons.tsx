@@ -5,7 +5,11 @@ import React, { useState } from "react";
 import { usePathname } from "next/navigation";
 import CreatePostDialog from "@/components/post/CreatePostDialog";
 
-export default function CreatePostButtons() {
+interface CreatePostButtonsProps {
+  onCreated?: (post: any) => void;
+}
+
+export default function CreatePostButtons({ onCreated }: CreatePostButtonsProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const pathname = usePathname();
 
@@ -50,6 +54,7 @@ export default function CreatePostButtons() {
       <CreatePostDialog
         show={isDialogOpen}
         onClose={() => setIsDialogOpen(false)}
+        onCreated={onCreated}
       />
     </>
   );

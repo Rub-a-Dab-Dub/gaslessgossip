@@ -28,6 +28,14 @@ export default function HomePage() {
   const [users, setUsers] = useState<IAllUser[] | null>(null);
   const [search, setSearch] = useState<string>("");
   const [isOpen, setIsOpen] = useState<boolean>(false);
+  const [posts, setPosts] = useState<any[]>([]);
+  const [loadingPosts, setLoadingPosts] = useState(false);
+  const [commentOpen, setCommentOpen] = useState<Record<number, boolean>>({});
+  const [commentText, setCommentText] = useState<Record<number, string>>({});
+  const [hasNewPosts, setHasNewPosts] = useState(false);
+  const [newCount, setNewCount] = useState(0);
+  const pendingPostsRef = useRef<any[]>([]);
+  const [inflightLikes, setInflightLikes] = useState<Record<number, boolean>>({});
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -58,6 +66,144 @@ export default function HomePage() {
   useEffect(() => {
     getAllUsers();
   }, []);
+
+  // Fetch posts (feed)
+  const fetchPosts = async () => {
+    setLoadingPosts(true);
+    try {
+      const res = await api.get(`/posts`);
+      if (res.data && !res.data.error) {
+        // API responses follow { error, message, data }
+        // `data` contains the posts array.
+        setPosts(res.data.data || []);
+      }
+    } catch (err) {
+      toast.error('Failed to fetch posts');
+      console.error(err);
+    } finally {
+      setLoadingPosts(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPosts();
+  }, []);
+
+  // Listen for cross-window/new-post events and show refresh button
+  useEffect(() => {
+    const handler = () => setHasNewPosts(true);
+    window.addEventListener("post:created", handler as EventListener);
+    return () => window.removeEventListener("post:created", handler as EventListener);
+  }, []);
+
+  // SSE: subscribe to new posts stream
+  useEffect(() => {
+    const apiBase = (process.env.NEXT_PUBLIC_API_URL || '').replace(/\/$/, '');
+    const streamUrl = apiBase ? `${apiBase}/posts/stream` : `/posts/stream`;
+    let es: EventSource | null = null;
+    try {
+      es = new EventSource(streamUrl);
+    } catch (e) {
+      console.error('Failed to open SSE', e);
+      return;
+    }
+
+    es.onmessage = (ev) => {
+      try {
+        const payload = JSON.parse(ev.data);
+        pendingPostsRef.current.push(payload);
+        setNewCount((c) => c + 1);
+        setHasNewPosts(true);
+      } catch (err) {
+        console.error('Invalid SSE payload', err);
+      }
+    };
+    es.onerror = (err) => {
+      console.error('SSE error', err);
+      es?.close();
+    };
+
+    return () => {
+      es?.close();
+    };
+  }, []);
+
+  const handleLike = async (postId: number, idx: number) => {
+    // prevent concurrent like/unlike requests for the same post
+    if (inflightLikes[postId]) return;
+    setInflightLikes((s) => ({ ...s, [postId]: true }));
+    try {
+      const res = await api.post(`/posts/${postId}/like`);
+      if (res.data && !res.data.error) {
+        const msg = (res.data.message || '').toString().toLowerCase();
+        setPosts((prev) => {
+          const copy = [...prev];
+          const p = { ...(copy[idx] || {}) };
+          if (msg.includes('unliked')) {
+            p.likeCount = Math.max(0, (p.likeCount || 0) - 1);
+            p.hasLiked = false;
+          } else {
+            p.likeCount = (p.likeCount || 0) + 1;
+            p.hasLiked = true;
+          }
+          copy[idx] = p;
+          return copy;
+        });
+      } else {
+        toast.error('Unable to like post');
+      }
+    } catch (err) {
+      toast.error('Unable to like post');
+    } finally {
+      setInflightLikes((s) => {
+        const copy = { ...s };
+        delete copy[postId];
+        return copy;
+      });
+    }
+  };
+
+  const handleShare = async (post: any) => {
+    const url = `${typeof window !== 'undefined' ? window.location.origin : ''}/posts/${post.id}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: post.author?.username || 'Post', text: post.content, url });
+        toast.success('Shared');
+      } else {
+        await navigator.clipboard.writeText(url);
+        toast.success('Link copied to clipboard');
+      }
+    } catch (err) {
+      toast.error('Unable to share');
+    }
+  };
+
+  const toggleCommentBox = (postId: number) => {
+    setCommentOpen((s) => ({ ...s, [postId]: !s[postId] }));
+  };
+
+  const submitComment = async (postId: number, idx: number) => {
+    const text = commentText[postId]?.trim();
+    if (!text) return;
+    try {
+      const res = await api.post(`/posts/${postId}/comment`, { content: text });
+      if (res.data && !res.data.error) {
+        toast.success('Comment added');
+        setCommentText((s) => ({ ...s, [postId]: '' }));
+        setCommentOpen((s) => ({ ...s, [postId]: false }));
+        // increment comment count
+        setPosts((prev) => {
+          const copy = [...prev];
+          const p = { ...copy[idx] };
+          p.commentCount = (p.commentCount || 0) + 1;
+          copy[idx] = p;
+          return copy;
+        });
+      }
+    } catch (err) {
+      toast.error('Unable to add comment');
+    }
+  };
 
   const renderUserAvatar = (photo?: string | null) =>
     photo ? (
@@ -97,47 +243,118 @@ export default function HomePage() {
             <TabPanel>
               {/* Posts Feed */}
               <div className="space-y-6">
-                {/* Post 1 */}
-                <div className="rounded-3xl p-6 border-1 border-dark-teal-border-color shadow-md">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-gray-700" />
-                      <div>
-                        <div className="font-semibold text-dark-white">
-                          ChickChatter
+                {hasNewPosts && (
+                  <div className="flex justify-center mb-2">
+                    <button
+                      onClick={() => {
+                        fetchPosts();
+                        setHasNewPosts(false);
+                        setNewCount(0);
+                        pendingPostsRef.current = [];
+                      }}
+                      className="px-4 py-2 rounded-full bg-teal-600 text-white text-sm shadow-md"
+                    >
+                      {newCount > 0 ? `${newCount} new posts — Tap to refresh` : 'New posts available — Tap to refresh'}
+                    </button>
+                  </div>
+                )}
+                {posts && posts.length > 0 ? (
+                  posts.map((post, idx) => (
+                    <div
+                      key={post.id}
+                      className="rounded-3xl p-6 border-1 border-dark-teal-border-color shadow-md"
+                    >
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-full bg-gray-700" />
+                          <div>
+                            <div className="font-semibold text-dark-white">
+                              {post.author?.username || "Unknown"}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3 text-secondary">
+                          <span className="text-xs">
+                            {post.createdAt
+                              ? new Date(post.createdAt).toLocaleString()
+                              : ""}
+                          </span>
+                          <button className="hover:text-white">
+                            <EllipsisVertical size={16} />
+                          </button>
                         </div>
                       </div>
+                      <p className="text-light-grey mb-4">{post.content}</p>
+
+                      {post.medias && post.medias.length > 0 && (
+                        <div className="mb-4 grid grid-cols-2 gap-2">
+                          {post.medias.map((m: string, i: number) => (
+                            <img
+                              key={i}
+                              src={m}
+                              alt={`media-${i}`}
+                              className="w-full h-40 object-cover rounded-lg"
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-6">
+                        <button
+                          onClick={() => handleLike(post.id, idx)}
+                          disabled={!!inflightLikes[post.id]}
+                          className={`flex items-center gap-2 ${post.hasLiked ? 'text-red-400' : 'text-secondary'} ${inflightLikes[post.id] ? 'opacity-60 pointer-events-none' : 'hover:text-red-400'}`}
+                        >
+                          <Heart size={18} />
+                          <span className="text-tertiary">
+                            {post.likeCount ?? post.likes?.length ?? 0}
+                          </span>
+                        </button>
+                        <button
+                          onClick={() => toggleCommentBox(post.id)}
+                          className="flex items-center gap-2 text-secondary hover:text-cyan-400"
+                        >
+                          <MessageCircle size={18} />
+                          <span className="text-tertiary">
+                            {post.commentCount ?? post.comments?.length ?? 0}
+                          </span>
+                        </button>
+                        <button onClick={() => handleShare(post)} className="flex items-center gap-2 text-secondary hover:text-cyan-400">
+                          <Share2 size={18} />
+                          <span className="text-tertiary">{post.shareCount ?? 0}</span>
+                        </button>
+                        <button className="flex items-center gap-2 text-secondary hover:text-cyan-400">
+                          <ZapIcon size={18} />
+                          <span className="text-tertiary">{post.zapCount ?? 0}</span>
+                        </button>
+                      </div>
+
+                      {commentOpen[post.id] && (
+                        <div className="mt-4">
+                          <input
+                            type="text"
+                            placeholder="Write a comment..."
+                            value={commentText[post.id] || ""}
+                            onChange={(e) =>
+                              setCommentText((s) => ({ ...s, [post.id]: e.target.value }))
+                            }
+                            className="w-full border-1 border-gray-700 rounded-full bg-transparent py-2 px-4 text-sm text-light-grey outline-none"
+                          />
+                          <div className="flex justify-end mt-2">
+                            <button
+                              onClick={() => submitComment(post.id, idx)}
+                              className="px-4 py-2 bg-teal-600 rounded-full text-white text-sm"
+                            >
+                              Comment
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex items-center gap-3 text-secondary">
-                      <span className="text-xs">2m ago</span>
-                      <button className="hover:text-white">
-                        <EllipsisVertical size={16} />
-                      </button>
-                    </div>
-                  </div>
-                  <p className="text-light-grey mb-4">
-                    Tell me why I just saw SneakyParrot leaving the Secret Room
-                    at 3am 😳🔥
-                  </p>
-                  <div className="flex items-center gap-6">
-                    <button className="flex items-center gap-2 text-secondary hover:text-red-400">
-                      <Heart size={18} />
-                      <span className="text-tertiary">24</span>
-                    </button>
-                    <button className="flex items-center gap-2 text-secondary hover:text-cyan-400">
-                      <MessageCircle size={18} />
-                      <span className="text-tertiary">24</span>
-                    </button>
-                    <button className="flex items-center gap-2 text-secondary hover:text-cyan-400">
-                      <Share2 size={18} />
-                      <span className="text-tertiary">24</span>
-                    </button>
-                    <button className="flex items-center gap-2 text-secondary hover:text-cyan-400">
-                      <ZapIcon size={18} />
-                      <span className="text-tertiary">24</span>
-                    </button>
-                  </div>
-                </div>
+                  ))
+                ) : (
+                  <div className="text-center text-light-grey">No posts yet</div>
+                )}
 
                 {/* Quests Section */}
                 <div className="rounded-2xl px-10 py-8 glass-effect__light">
@@ -261,7 +478,19 @@ export default function HomePage() {
         </div>
 
         <CreateNewRoom />
-        <CreatePostButtons />
+        <CreatePostButtons
+          onCreated={async (post) => {
+            // Refresh the feed from the server so ordering by createdAt is authoritative
+            try {
+              setHasNewPosts(false);
+              setNewCount(0);
+              pendingPostsRef.current = pendingPostsRef.current.filter((p) => p.id !== post.id);
+              await fetchPosts();
+            } catch (err) {
+              console.error('Failed to refresh posts after create', err);
+            }
+          }}
+        />
         <button className="hidden md:flex">
           <svg
             width="24"

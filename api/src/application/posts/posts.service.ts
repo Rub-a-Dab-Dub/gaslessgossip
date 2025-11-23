@@ -3,23 +3,46 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, FindOptionsWhere } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Post } from './entities/post.entity';
 import { User } from '../users/entities/user.entity';
 import { Comment } from './entities/comment.entity';
 import { Like } from './entities/like.entity';
 import { CREATE_POST } from 'src/common/constants/xp';
+import { Subject, Observable } from 'rxjs';
+import { XmtpService } from '../../infrastructure/xmtp/xmtp.service';
+
+export interface PostPayload {
+  id: number;
+  content: string;
+  createdAt: Date;
+  medias?: string[];
+  commentCount?: number;
+  likeCount?: number;
+  author: { id: number; username: string; photo?: string | null };
+}
 
 @Injectable()
 export class PostsService {
+  private readonly logger = new Logger(PostsService.name);
+
   constructor(
     @InjectRepository(Post) private postsRepository: Repository<Post>,
     @InjectRepository(User) private usersRepository: Repository<User>,
     @InjectRepository(Comment) private commentsRepository: Repository<Comment>,
     @InjectRepository(Like) private likesRepository: Repository<Like>,
+    private readonly xmtpService?: XmtpService,
   ) {}
+
+  private postSubject = new Subject<PostPayload>();
+
+  // Observable stream for SSE
+  get postStream(): Observable<PostPayload> {
+    return this.postSubject.asObservable();
+  }
 
   // Create a post
   async createPost(userId: number, content: string, medias?: string[]) {
@@ -30,16 +53,45 @@ export class PostsService {
     const savePost = await this.postsRepository.save(post);
     if (savePost.id) {
       user.xp += CREATE_POST;
-      const add_xp_to_user = await this.usersRepository.save(user);
-      return { message: 'Post created successfully' };
+      await this.usersRepository.save(user);
+      // Build payload to return and emit via SSE
+      const payload: PostPayload = {
+        id: savePost.id,
+        content: savePost.content,
+        createdAt: savePost.createdAt,
+        medias: savePost.medias,
+        commentCount: savePost.commentCount,
+        likeCount: savePost.likeCount,
+        author: {
+          id: user.id,
+          username: user.username,
+          photo: user.photo,
+        },
+      };
+
+      // emit to SSE listeners
+      this.postSubject.next(payload);
+
+      // Notify XMTP recipients asynchronously (do not block post creation)
+      void (async () => {
+        try {
+          if (this.xmtpService) {
+            await this.xmtpService.notifyRecipients(payload);
+          }
+        } catch (err) {
+          this.logger.error('XMTP notify failed', err);
+        }
+      })();
+
+      return payload;
     }
     throw new BadRequestException('Unable to create post');
   }
 
-  // Get all posts
-  async getAllPosts() {
+  // Get all posts (optionally include hasLiked for the requesting user)
+  async getAllPosts(userId?: number) {
     const posts = await this.postsRepository.find({
-      relations: ['author'],
+      relations: ['author', 'likes', 'likes.user'],
       order: { createdAt: 'DESC' },
     });
 
@@ -50,6 +102,7 @@ export class PostsService {
       medias: post.medias,
       commentCount: post.commentCount,
       likeCount: post.likeCount,
+      hasLiked: userId ? !!post.likes?.some((l) => l.user?.id === userId) : false,
       author: {
         id: post.author.id,
         username: post.author.username,

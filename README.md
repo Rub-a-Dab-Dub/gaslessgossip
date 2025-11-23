@@ -2,7 +2,7 @@
 
 **A gamified, on-chain messaging app where gossip meets Web3**
 
-Chat, tip friends, join exclusive rooms, and level up—all with near-zero gas fees on celo, Base and BNB.
+Chat, tip friends, join exclusive rooms, and level up—all with near-zero gas fees on BNB, Celo, and Base.
 
 🌐 **Live App**: [www.gaslessgossip.com](https://www.gaslessgossip.com)  
 📚 **Docs**: [Coming Soon]  
@@ -13,7 +13,7 @@ Chat, tip friends, join exclusive rooms, and level up—all with near-zero gas f
 ## ✨ What Can You Do?
 
 - 💬 **Chat & Earn**: Send messages and earn XP
-- 💰 **Tip in Chats**: Reward users with STRK tokens (2% platform fee)
+- 💰 **Tip in Chats**: Reward users with tokens (2% platform fee)
 - 🔐 **Token-Gated Rooms**: Create paid or invite-only rooms
 - 🎁 **P2P Transfers**: Send tokens to friends (no fees!)
 - 🏆 **Level Up**: Complete quests, earn badges, climb leaderboards
@@ -28,7 +28,7 @@ Chat, tip friends, join exclusive rooms, and level up—all with near-zero gas f
 - Node.js 18+
 - Docker Desktop ([Download](https://www.docker.com/products/docker-desktop/)) **OR** PostgreSQL 14+
 - Flutter 3.x (for mobile, optional)
-- EVM wallet (Metamsk)
+- EVM-compatible wallet (MetaMask, Celo Wallet, etc.)
 
 ### Option A: Docker Setup (Recommended) 🐳
 
@@ -43,10 +43,11 @@ cd gasless_gossip
 npm run setup
 
 # 3. Update environment variables
-# Edit api/.env with your wallet credentials
-# - ACCOUNT_ADDRESS
-# - PRIVATE_KEY
-# - CONTRACT_ADDRESS
+# Edit api/.env with your chain credentials
+# - EVM_RPC_URL
+# - EVM_ACCOUNT_ADDRESS
+# - EVM_PRIVATE_KEY
+# - EVM_CONTRACT_ADDRESS
 # - JWT_SECRET (generate a secure random string)
 
 # 4. Start Docker services (PostgreSQL + Redis)
@@ -65,10 +66,6 @@ npm run dev
 **See [DOCKER_SETUP.md](./DOCKER_SETUP.md) for detailed Docker documentation.**
 
 ---
-
-### Option B: Manual Setup
-
-If you prefer installing PostgreSQL manually:
 
 ### Option B: Manual Setup
 
@@ -112,12 +109,12 @@ DATABASE_USER=gasless_user
 DATABASE_PASS=your_secure_password
 DATABASE_NAME=gasless
 
-# Sepolia Testnet
-RPC_URL=rpc-url
-ACCOUNT_ADDRESS=your_account_address
-PRIVATE_KEY=your_private_key
-CONTRACT_ADDRESS=your_deployed_contract
-NETWORK=sepolia
+# EVM Chain (BNB, Celo, Base)
+EVM_RPC_URL=https://rpc-url-for-your-chain
+EVM_ACCOUNT_ADDRESS=your_account_address
+EVM_PRIVATE_KEY=your_private_key
+EVM_CONTRACT_ADDRESS=your_deployed_contract
+EVM_NETWORK=base # or bnb, celo
 
 # Auth
 JWT_SECRET=your_jwt_secret_minimum_32_chars
@@ -143,7 +140,7 @@ npm install
 # Create .env.local
 cat > .env.local << EOF
 NEXT_PUBLIC_API_URL=http://localhost:3001
-NEXT_PUBLIC_NETWORK=sepolia
+NEXT_PUBLIC_EVM_NETWORK=base # or bnb, celo
 EOF
 
 # Start web app
@@ -249,7 +246,7 @@ npm run fresh            # Clean + reinstall everything
 └─────────────────────┬─────────────────────────┘
                       │
 ┌─────────────────────▼─────────────────────────┐
-│             Blockchain                 │
+│        EVM Chains: BNB, Celo, Base             │
 │  • GGPay Contract (payments)                   │
 │  • Account Abstraction (gasless)               │
 │  • Session Keys (auto-approve)                 │
@@ -267,7 +264,7 @@ gasless_gossip/
 │   │   ├── auth/          # JWT authentication
 │   │   ├── users/         # User management
 │   │   ├── rooms/         # Room logic
-│   │   ├── contracts/     # Blockchain integration
+│   │   ├── contracts/     # EVM integration
 │   │   └── wallets/       # Wallet creation queue
 │   └── package.json
 │
@@ -284,10 +281,9 @@ gasless_gossip/
 │   └── pubspec.yaml
 │
 └── contract/              # Smart contracts
-    ├── starknet/          # Cairo contracts
-    │   ├── src/gg_pay.sol
+    ├── evm/               # Solidity contracts for BNB, Celo, Base
+    │   ├── GGPay.sol
     │   └── tests/
-    └── solidity/          # Base/Celo (EVM)
 ```
 
 ---
@@ -303,11 +299,12 @@ npm run test:e2e          # E2E tests
 npm run test:cov          # Coverage
 ```
 
-### Contract Tests (Solidity)
+### Contract Tests (EVM)
 
 ```bash
-cd contract/solidity
-forge test
+cd contract/evm
+npx hardhat test          # Run all tests
+npx hardhat test test_tip_user.js  # Run specific test
 ```
 
 ### Frontend Tests
@@ -345,7 +342,7 @@ git checkout -b feature/your-feature-name
 
 ### 3. Make Changes
 
-- Follow existing code style (ESLint/Prettier for TS, Cairo formatting for contracts)
+- Follow existing code style (ESLint/Prettier for TS, Solidity formatting for contracts)
 - Write tests for new features
 - Update documentation if needed
 
@@ -359,7 +356,7 @@ cd api && npm run test && npm run lint
 cd web && npm run build && npm run lint
 
 # Contracts
-cd contract/solidity && forge test
+cd contract/evm && npx hardhat test
 ```
 
 ### 5. Commit & Push
@@ -401,7 +398,7 @@ Look for issues tagged `good-first-issue` or `help-wanted`:
 Users never pay gas fees. The backend's paymaster account sponsors all transactions using session keys.
 
 ### Token Tipping
-Send STRK tokens in chats with a 2% platform fee. Tips are instant and on-chain.
+Send tokens in chats with a 2% platform fee. Tips are instant and on-chain.
 
 ### Room Entry Fees
 Creators can set token-gated rooms. Platform takes 2%, creator gets 98%.
@@ -419,10 +416,10 @@ Creators can set token-gated rooms. Platform takes 2%, creator gets 98%.
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
 | **Frontend Web** | Next.js 14, TypeScript, TailwindCSS | Responsive web interface |
-| **Frontend Mobile** | Flutter 3.x, solidity.dart | iOS/Android apps |
+| **Frontend Mobile** | Flutter 3.x, web3dart | iOS/Android apps |
 | **Backend** | NestJS, TypeORM, Bull | REST API, WebSockets, queues |
 | **Database** | PostgreSQL 14+ | User data, messages, rooms |
-| **Blockchain** | celo, Base and BNB (Sepolia), Solidity | Payment contracts |
+| **Blockchain** | BNB, Celo, Base (Solidity) | Payment contracts |
 | **Storage** | IPFS/Arweave | Media files (hashed on-chain) |
 | **Auth** | JWT, session keys | Gasless transactions |
 
@@ -440,10 +437,10 @@ DATABASE_USER=gasless_user
 DATABASE_PASS=your_password
 DATABASE_NAME=gasless
 
-RPC_URL=https://rpc-url
-ACCOUNT_ADDRESS=0x...
-PRIVATE_KEY=0x...
-CONTRACT_ADDRESS=0x...
+EVM_RPC_URL=https://rpc-url-for-your-chain
+EVM_ACCOUNT_ADDRESS=0x...
+EVM_PRIVATE_KEY=0x...
+EVM_CONTRACT_ADDRESS=0x...
 
 JWT_SECRET=minimum_32_character_secret
 
@@ -458,7 +455,7 @@ RETRY_DELAY_MS=2000
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:3001
-NEXT_PUBLIC_NETWORK=sepolia
+NEXT_PUBLIC_EVM_NETWORK=base # or bnb, celo
 ```
 
 ---
@@ -494,10 +491,7 @@ npm run docker:logs      # Look for "database system is ready"
 - Verify database exists: `psql -U postgres -l`
 - Check `.env` file has all required variables
 
-### Solidity transactions fail
-- ### Solidity Issues
-
-- **Transactions fail:**
+### EVM transactions fail
 - Check contract address is correct
 - Verify RPC URL is responsive
 
@@ -520,7 +514,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ## 🙏 Acknowledgments
 
-- Starknet, celo, Base and BNB Foundation for blockchain infrastructure
+- BNB Chain, Celo, and Base for blockchain infrastructure
 - OpenZeppelin for secure contract libraries
 - NestJS team for excellent backend framework
 

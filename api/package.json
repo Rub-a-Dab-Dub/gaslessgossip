@@ -46,6 +46,7 @@
     "@nestjs/typeorm": "^11.0.0",
     "@nestjs/websockets": "^11.1.6",
     "@sendgrid/mail": "^8.1.6",
+    "@xmtp/xmtp-js": "^13.0.4",
     "bcrypt": "^6.0.0",
     "bullmq": "^5.62.0",
     "class-transformer": "^0.5.1",

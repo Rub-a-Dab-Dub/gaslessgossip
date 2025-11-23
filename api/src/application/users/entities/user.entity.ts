@@ -16,6 +16,7 @@ import { Chat } from '../../chats/entities/chat.entity';
 import { Room } from '../../rooms/entities/room.entity';
 import { Wallet } from '../../wallets/entities/wallet.entity';
 import { UserVerification } from './user-verification.entity';
+import { File } from '@/application/files/entities/files.entity';
 
 @Entity()
 export class User {
@@ -101,4 +102,7 @@ export class User {
 
   @OneToMany(() => UserVerification, (verification) => verification.user)
   verifications: UserVerification[];
+
+  @OneToMany(() => File, (file) => file.uploader)
+  files: File[];
 }
