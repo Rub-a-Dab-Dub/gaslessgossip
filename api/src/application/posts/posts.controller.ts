@@ -8,29 +8,66 @@ import {
   Body,
   UseGuards,
   Request,
+  UploadedFiles,
+  UseInterceptors,
+  Sse,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PostsService } from './posts.service';
 import { CreatePostDto, EditPostDto } from './dtos/post.dto';
 import { CommentDto, EditCommentDto } from './dtos/comment.dto';
+import { FilesService } from '../files/files.service';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { ApiConsumes, ApiBody } from '@nestjs/swagger';
+import { map } from 'rxjs/operators';
 
 @Controller('posts')
 export class PostsController {
-  constructor(private readonly postsService: PostsService) {}
+  constructor(
+    private readonly postsService: PostsService,
+    private readonly filesService: FilesService,
+  ) {}
 
   @UseGuards(JwtAuthGuard)
   @HttpPost()
-  createPost(@Request() req, @Body() dto: CreatePostDto) {
-    return this.postsService.createPost(
-      req.user.userId,
-      dto.content,
-      dto.medias,
-    );
+  @UseInterceptors(FilesInterceptor('files'))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        content: { type: 'string' },
+        files: { type: 'array', items: { type: 'string', format: 'binary' } },
+      },
+    },
+  })
+  async createPost(
+    @Request() req,
+    @Body() dto: CreatePostDto,
+    @UploadedFiles() files?: any[],
+  ) {
+    let medias = dto.medias ?? [];
+    if (files && files.length) {
+      const uploaded = await Promise.all(
+        files.map((f) => this.filesService.uploadFile(f, req.user)),
+      );
+      // store signed urls in medias array
+      medias = medias.concat(uploaded.map((u) => u.url));
+    }
+
+    return this.postsService.createPost(req.user.userId, dto.content, medias);
+  }
+
+  @Sse('stream')
+  streamNewPosts() {
+    // Map the internal payload to a MessageEvent-like object with `data` property
+    return this.postsService.postStream.pipe(map((data) => ({ data })));
   }
 
   @Get()
-  getAll() {
-    return this.postsService.getAllPosts();
+  getAll(@Request() req) {
+    const userId = req?.user?.userId;
+    return this.postsService.getAllPosts(userId);
   }
 
   @Get(':id')

@@ -2,7 +2,7 @@
 
 import { Dialog, DialogPanel } from "@headlessui/react";
 import { Gift, ArrowRight } from "lucide-react";
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import Avatar from "@/components/ui/Avatar";
 import { usePathname } from "next/navigation";
 import CreateSuccessDialog from "@/components/CreateSuccessDialog";
@@ -14,28 +14,66 @@ import { GiftIcon, UploadImageIcon } from "@/components/icons";
 interface CreatePostDialogProps {
   show: boolean;
   onClose: () => void;
+  onCreated?: (post: any) => void;
 }
 
 export default function CreatePostDialog({
   show,
   onClose,
+  onCreated,
 }: CreatePostDialogProps) {
   const [content, setContent] = useState("");
   const [isPosting, setIsPosting] = useState(false);
   const [isPosted, setIsPosted] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    // create object URLs for previews
+    const urls = selectedFiles.map((f) => URL.createObjectURL(f));
+    setPreviews(urls);
+    return () => {
+      urls.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [selectedFiles]);
 
   const handlePost = async () => {
-    if (!content.trim()) return;
+    if (!content.trim() && selectedFiles.length === 0) return;
     try {
       setIsPosting(true);
-      const res = await api.post<ApiResponse>(`posts`, { content });
+      const form = new FormData();
+      form.append("content", content);
+      selectedFiles.forEach((f) => form.append("files", f));
+
+      const res = await api.post<ApiResponse>(`posts`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (progressEvent: ProgressEvent) => {
+          if (progressEvent.total) {
+            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setUploadProgress(percent);
+          }
+        },
+      });
       if (res.data.error) {
         toast.error(res.data.message ?? "Failed");
         return;
       }
-      toast.success(res.data.data.message);
+      toast.success(res.data.message ?? 'Post created');
       setIsPosted(true);
       setContent("");
+      setSelectedFiles([]);
+      setPreviews([]);
+      setUploadProgress(0);
+      // Notify parent / listeners that a post was created so UI can refresh
+      try {
+        const payload = res.data?.data ?? null;
+        if (onCreated && payload) onCreated(payload);
+        window.dispatchEvent(new CustomEvent("post:created", { detail: payload }));
+      } catch (e) {
+        // ignore
+      }
       onClose();
     } catch (error) {
       toast.error("Unable to create post, an error occurred..");
@@ -78,15 +116,61 @@ export default function CreatePostDialog({
                 />
               </div>
 
+              {/* Upload progress bar */}
+              {uploadProgress > 0 && uploadProgress < 100 && (
+                <div className="w-full bg-gray-800 h-2 rounded-full mt-4 mb-2">
+                  <div
+                    className="h-2 bg-teal-400 rounded-full"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              )}
+
               <div className="flex items-center justify-between mt-4">
                 <div className="flex items-center gap-4">
-                  <button className="p-2 text-[#14F1D9] hover:bg-[#14F1D9]/10 rounded-lg">
-                    <UploadImageIcon />
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => inputRef.current?.click()}
+                      className="p-2 text-[#14F1D9] hover:bg-[#14F1D9]/10 rounded-lg"
+                    >
+                      <UploadImageIcon />
+                    </button>
+                    <input
+                      ref={inputRef}
+                      type="file"
+                      accept="image/*,video/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files || []);
+                        setSelectedFiles((s) => [...s, ...files]);
+                      }}
+                    />
                   <button className="p-2 text-[#14F1D9] hover:bg-[#14F1D9]/10 rounded-lg">
                     <GiftIcon />
                   </button>
                 </div>
+
+                {/* Previews */}
+                {previews.length > 0 && (
+                  <div className="mt-4 grid grid-cols-4 gap-2">
+                    {previews.map((p, i) => (
+                      <div key={i} className="relative">
+                        <img src={p} className="w-full h-24 object-cover rounded-md" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedFiles((s) => s.filter((_, idx) => idx !== i));
+                            setPreviews((s) => s.filter((_, idx) => idx !== i));
+                          }}
+                          className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 <button
                   onClick={handlePost}
