@@ -13,7 +13,6 @@ import { Comment } from './entities/comment.entity';
 import { Like } from './entities/like.entity';
 import { CREATE_POST } from 'src/common/constants/xp';
 import { Subject, Observable } from 'rxjs';
-import { XmtpService } from '../../infrastructure/xmtp/xmtp.service';
 
 export interface PostPayload {
   id: number;
@@ -34,7 +33,6 @@ export class PostsService {
     @InjectRepository(User) private usersRepository: Repository<User>,
     @InjectRepository(Comment) private commentsRepository: Repository<Comment>,
     @InjectRepository(Like) private likesRepository: Repository<Like>,
-    private readonly xmtpService?: XmtpService,
   ) {}
 
   private postSubject = new Subject<PostPayload>();
@@ -71,17 +69,6 @@ export class PostsService {
 
       // emit to SSE listeners
       this.postSubject.next(payload);
-
-      // Notify XMTP recipients asynchronously (do not block post creation)
-      void (async () => {
-        try {
-          if (this.xmtpService) {
-            await this.xmtpService.notifyRecipients(payload);
-          }
-        } catch (err) {
-          this.logger.error('XMTP notify failed', err);
-        }
-      })();
 
       return payload;
     }

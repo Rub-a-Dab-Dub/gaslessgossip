@@ -7,10 +7,9 @@ import { Comment } from './entities/comment.entity';
 import { Like } from './entities/like.entity';
 import { User } from '../users/entities/user.entity';
 import { FilesModule } from '../files/files.module';
-import { XmtpModule } from '../../infrastructure/xmtp/xmtp.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Post, Comment, Like, User]), FilesModule, XmtpModule],
+  imports: [TypeOrmModule.forFeature([Post, Comment, Like, User]), FilesModule],
   providers: [PostsService],
   controllers: [PostsController],
 })

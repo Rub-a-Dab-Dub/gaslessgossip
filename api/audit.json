@@ -8,11 +8,6 @@
     "extension": "",
     "files": [
         {
-            "date": 1762720310761,
-            "name": "./tmp/chat/test-2025-11-09.log.0",
-            "hash": "960cf7fe68dcb7e8204f4489e2320b41"
-        },
-        {
             "date": 1762720323100,
             "name": "./tmp/chat/test-2025-11-09.log.2025",
             "hash": "396183042dd6701fb41f1c040973f0b7"
@@ -56,6 +51,11 @@
             "date": 1763888291068,
             "name": "./tmp/chat/test-2025-11-23.log.2025",
             "hash": "a17134b2c7f2015f65a55f84eb1dda6f"
+        },
+        {
+            "date": 1764014337585,
+            "name": "./tmp/chat/test-2025-11-24.log.0",
+            "hash": "de13247a0c65554b4deb2b8353827e62"
         }
     ]
 }
