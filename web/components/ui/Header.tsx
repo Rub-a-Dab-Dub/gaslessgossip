@@ -4,7 +4,6 @@ import {
   MessageCircleMore,
   LogOut,
   X,
-  Search,
   Menu,
 } from 'lucide-react';
 import { Dialog, DialogPanel } from '@headlessui/react'

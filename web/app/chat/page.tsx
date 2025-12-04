@@ -2,10 +2,7 @@
 
 import { useEffect, useState } from "react"
 import {
-  Search,
   ArrowLeft,
-  MoreVertical,
-  Smile,
   Paperclip,
   MessageCircleWarningIcon,
   ArrowRightCircleIcon
@@ -13,7 +10,6 @@ import {
 import Header from "@/components/ui/Header";
 
 import Image from "next/image";
-import ChatAvatarImage from "@/images/photos/chat-pic.png"
 import SendTokenDialog from "@/components/SendTokenDialog";
 import api from "@/lib/axios";
 import { ApiResponse } from "@/types/api";
@@ -38,6 +34,7 @@ export default function ChatInterface() {
   const [isSendTokenOpen, setIsSendTokenOpen] = useState(false)
 
   const [isLoading, setIsLoading] = useState(false)
+  console.log("🚀 ~ ChatInterface ~ isLoading:", isLoading)
 
   // Fetch all chats on load
   const getAllChats = async () => {
