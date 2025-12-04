@@ -93,43 +93,64 @@ contract GaslessGossip is ReentrancyGuard, Ownable, Pausable {
 
     // ==================== EXTERNAL FUNCTIONS ====================
 
-    function tipUser(address recipient, uint256 amount, address token, string memory context)
-        external
-        payable
-        nonReentrant
-        whenNotPaused
-    {
-        if (recipient == address(0)) revert ZeroAddress();
-        if (msg.sender == recipient) revert SelfTip();
+    function tipUser(
+        string memory recipientname,
+        uint256 amount,
+        address token,
+        string memory _username,
+        string memory context
+    ) external nonReentrant whenNotPaused {
+        if (msg.sender != paymasterAddress) revert OnlyPaymaster();
+        if (bytes(recipientname).length == 0 || bytes(_username).length == 0) revert EmptyUsername();
+
+        UserProfile memory senderProfile = userProfiles[_username];
+        if (!senderProfile.exists) revert UsernameNotExist();
+
+        UserProfile memory recipientProfile = userProfiles[recipientname];
+        if (!recipientProfile.exists) revert UsernameNotExist();
+
+        address senderWallet = senderProfile.userWallet;
+        address recipientWallet = recipientProfile.userWallet;
+
+        if (recipientWallet == address(0)) revert ZeroAddress();
+        if (senderWallet == recipientWallet) revert SelfTip();
         if (amount == 0) revert ZeroAmount();
 
         uint256 feeBps = platformFeeBps;
         uint256 platformFee = (amount * feeBps) / 10000;
         uint256 netAmount = amount - platformFee;
 
+        IWallet senderWalletContract = IWallet(senderWallet);
+
         if (token == address(0)) {
             // Native ETH tip
-            if (msg.value != amount) revert AmountMismatch();
+            require(senderWalletContract.withdrawETH(payable(address(this)), amount), "ETH withdraw failed");
             accumulatedFees += platformFee;
-            payable(recipient).transfer(netAmount);
+            payable(recipientWallet).transfer(netAmount);
         } else {
             // ERC20 tip
-            if (msg.value != 0) revert UnexpectedETH();
-            IERC20(token).transferFrom(msg.sender, address(this), amount);
-            IERC20(token).transfer(recipient, netAmount);
+            require(senderWalletContract.withdrawERC20(token, address(this), amount), "ERC20 withdraw failed");
+            IERC20(token).transfer(recipientWallet, netAmount);
             accumulatedTokenFees[token] += platformFee;
         }
 
-        emit TipSent(msg.sender, recipient, amount, platformFee, netAmount, context, block.timestamp);
+        emit TipSent(senderWallet, recipientWallet, amount, platformFee, netAmount, context, block.timestamp);
     }
 
     /// @notice Pay room entry fee (2% platform fee, 98% to creator)
-    function payRoomEntry(uint256 roomId, address roomCreator, uint256 entryFee, address token)
+    function payRoomEntry(uint256 roomId, address roomCreator, uint256 entryFee, address token, string memory _username)
         external
-        payable
         nonReentrant
         whenNotPaused
     {
+        if (msg.sender != paymasterAddress) revert OnlyPaymaster();
+        if (bytes(_username).length == 0) revert EmptyUsername();
+
+        UserProfile memory senderProfile = userProfiles[_username];
+        if (!senderProfile.exists) revert UsernameNotExist();
+
+        address senderWallet = senderProfile.userWallet;
+
         if (roomCreator == address(0)) revert ZeroAddress();
         if (entryFee == 0) revert ZeroAmount();
 
@@ -137,43 +158,64 @@ contract GaslessGossip is ReentrancyGuard, Ownable, Pausable {
         uint256 platformFee = (entryFee * feeBps) / 10000;
         uint256 creatorAmount = entryFee - platformFee;
 
+        IWallet senderWalletContract = IWallet(senderWallet);
+
         if (token == address(0)) {
-            // Native ETH payment
-            if (msg.value != entryFee) revert AmountMismatch();
+            // Native ETH payment: Withdraw from sender wallet to this contract
+            bool withdrawSuccess = senderWalletContract.withdrawETH(payable(address(this)), entryFee);
+            require(withdrawSuccess, "ETH withdraw failed");
             accumulatedFees += platformFee;
             payable(roomCreator).transfer(creatorAmount);
         } else {
-            // ERC20 payment
-            if (msg.value != 0) revert UnexpectedETH();
-            IERC20(token).transferFrom(msg.sender, address(this), entryFee);
+            // ERC20 payment: Withdraw from sender wallet to this contract
+            bool withdrawSuccess = senderWalletContract.withdrawERC20(token, address(this), entryFee);
+            require(withdrawSuccess, "ERC20 withdraw failed");
             IERC20(token).transfer(roomCreator, creatorAmount);
             accumulatedTokenFees[token] += platformFee;
         }
 
-        emit RoomEntryPaid(msg.sender, roomId, roomCreator, entryFee, platformFee, creatorAmount, block.timestamp);
+        emit RoomEntryPaid(senderWallet, roomId, roomCreator, entryFee, platformFee, creatorAmount, block.timestamp);
     }
 
     /// @notice Send tokens directly (NO FEES)
-    function sendTokens(address recipient, uint256 amount, address token) external payable nonReentrant whenNotPaused {
-        if (recipient == address(0)) revert ZeroAddress();
-        if (msg.sender == recipient) revert SelfSend();
+    function sendTokens(string memory recipientname, uint256 amount, address token, string memory _username)
+        external
+        nonReentrant
+        whenNotPaused
+    {
+        if (msg.sender != paymasterAddress) revert OnlyPaymaster();
+        if (bytes(recipientname).length == 0 || bytes(_username).length == 0) revert EmptyUsername();
+
+        UserProfile memory senderProfile = userProfiles[_username];
+        if (!senderProfile.exists) revert UsernameNotExist();
+
+        UserProfile memory recipientProfile = userProfiles[recipientname];
+        if (!recipientProfile.exists) revert UsernameNotExist();
+
+        address senderWallet = senderProfile.userWallet;
+        address recipientWallet = recipientProfile.userWallet;
+
+        if (recipientWallet == address(0)) revert ZeroAddress();
+        if (senderWallet == recipientWallet) revert SelfSend();
         if (amount == 0) revert ZeroAmount();
 
+        IWallet senderWalletContract = IWallet(senderWallet);
+
         if (token == address(0)) {
-            // Native ETH send
-            if (msg.value != amount) revert AmountMismatch();
-            payable(recipient).transfer(amount);
+            // Native ETH send: Withdraw from sender wallet directly to recipient
+            bool success = senderWalletContract.withdrawETH(payable(recipientWallet), amount);
+            require(success, "ETH send failed");
         } else {
-            // ERC20 send
-            if (msg.value != 0) revert UnexpectedETH();
-            IERC20(token).transferFrom(msg.sender, recipient, amount);
+            // ERC20 send: Withdraw from sender wallet directly to recipient
+            bool success = senderWalletContract.withdrawERC20(token, recipientWallet, amount);
+            require(success, "ERC20 send failed");
         }
 
-        emit TokensSent(msg.sender, recipient, amount, block.timestamp);
+        emit TokensSent(senderWallet, recipientWallet, amount, block.timestamp);
     }
 
     /// @notice Owner withdraws accumulated ETH platform fees
-    function withdrawETHFees(address payable recipient, uint256 amount) external onlyOwner {
+    function withdrawETHFees(address payable recipient, uint256 amount) external nonReentrant onlyOwner {
         if (recipient == address(0)) revert ZeroAddress();
         if (amount == 0) revert ZeroAmount();
         if (amount > accumulatedFees) revert InsufficientFees();
@@ -186,7 +228,7 @@ contract GaslessGossip is ReentrancyGuard, Ownable, Pausable {
     }
 
     /// @notice Owner withdraws accumulated token platform fees
-    function withdrawTokenFees(address token, address recipient, uint256 amount) external onlyOwner {
+    function withdrawTokenFees(address token, address recipient, uint256 amount) external nonReentrant onlyOwner {
         if (token == address(0)) revert ZeroAddress();
         if (recipient == address(0)) revert ZeroAddress();
         if (amount == 0) revert ZeroAmount();
@@ -328,10 +370,28 @@ contract GaslessGossip is ReentrancyGuard, Ownable, Pausable {
         }
     }
 
-    // ==================== INTERNAL ====================
-    function _assertNotPaused() internal view {
-        if (paused()) revert ContractPaused();
+    function withdrawFromContract(address token, address to, uint256 amount) external nonReentrant onlyOwner {
+        require(to != address(0), "Invalid recipient address");
+        require(msg.sender == owner(), "Only owner can withdraw");
+
+        if (token == address(0)) {
+            // ETH withdrawal - full balance (ignores amount param)
+            uint256 balance = address(this).balance;
+            require(balance > 0, "No ETH to withdraw");
+            (bool success,) = to.call{value: balance}("");
+            require(success, "ETH transfer failed");
+        } else {
+            // ERC20 withdrawal - specified amount
+            require(amount > 0, "Amount must be greater than 0");
+            IERC20 erc20 = IERC20(token);
+            uint256 balance = erc20.balanceOf(address(this));
+            require(balance >= amount, "Insufficient token balance");
+            bool success = erc20.transfer(to, amount);
+            require(success, "Token transfer failed");
+        }
     }
+
+    receive() external payable {}
 }
 
 /// @title Wallet - Minimal smart wallet controlled by GaslessGossip
