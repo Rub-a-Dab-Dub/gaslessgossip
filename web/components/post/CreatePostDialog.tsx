@@ -49,7 +49,7 @@ export default function CreatePostDialog({
 
       const res = await api.post<ApiResponse>(`posts`, form, {
         headers: { "Content-Type": "multipart/form-data" },
-        onUploadProgress: (progressEvent: ProgressEvent) => {
+        onUploadProgress: (progressEvent: any) => {
           if (progressEvent.total) {
             const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
             setUploadProgress(percent);

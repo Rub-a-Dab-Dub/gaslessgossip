@@ -9,6 +9,7 @@ import toast from "react-hot-toast";
 interface DeleteRoomModalProps {
     isOpen: boolean;
     onClose: () => void;
+    onConfirm: () => void;
     roomId: number;
     roomName: string;
     onDeleted?: () => void;
