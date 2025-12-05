@@ -130,12 +130,72 @@ export default function Auth() {
         password,
       });
       console.log("res is => ", res);
-      if (res.status === 412 || res.data?.code === 412) {
-        setUserId(res.data?.userId);
-        setShowVerification(true);
-        toast.error(
-          "Your account is not verified. Please check your email for verification code."
+
+      // Check for 412 status code or code in response (handles both wrapped and unwrapped responses)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const responseData = res.data as any;
+      const responseCode = responseData?.code || responseData?.data?.code;
+      const responseDetails =
+        responseData?.details || responseData?.data?.details || "";
+
+      // Check if account is not verified (412 code or specific error message)
+      const isUnverified =
+        res.status === 412 ||
+        responseCode === 412 ||
+        (typeof responseDetails === "string" &&
+          (responseDetails.includes("Your account is not verified") ||
+            responseDetails.includes("verification email has been sent")));
+
+      if (isUnverified) {
+        // Try multiple paths for userId since response might be wrapped differently
+        // The response structure when wrapped: {error: false, message: 'successful', data: {code: 412, userId: ..., ...}}
+        // The response structure when not wrapped: {code: 412, userId: ..., ...}
+        let userId =
+          responseData?.userId ||
+          responseData?.data?.userId ||
+          responseData?.data?.data?.userId;
+
+        // If still not found, try to find userId anywhere in the nested data structure
+        if (
+          !userId &&
+          responseData?.data &&
+          typeof responseData.data === "object"
+        ) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          userId = (responseData.data as any).userId;
+        }
+
+        console.log(
+          "Unverified account detected. Full response:",
+          JSON.stringify(res.data, null, 2)
         );
+        console.log("Response data.data:", responseData?.data);
+        console.log(
+          "Checking userId at responseData.data.userId:",
+          responseData?.data?.userId
+        );
+        console.log("Extracted userId:", userId);
+
+        const errorMessage =
+          responseDetails ||
+          "Your account is not verified. A verification email has been sent to your email. Please check your email and verify your account.";
+
+        if (userId) {
+          toast.error(
+            "Your account is not verified. Please check your email for verification code."
+          );
+          router.push(
+            `/auth/verify?userId=${userId}&redirect=${encodeURIComponent(redirectPath)}`
+          );
+          return;
+        } else {
+          console.error(
+            "UserId not found in response. Full response:",
+            JSON.stringify(responseData, null, 2)
+          );
+          console.error("Response status:", res.status);
+          toast.error(errorMessage);
+        }
         return;
       }
 
@@ -152,6 +212,47 @@ export default function Auth() {
       }
     } catch (error: unknown) {
       console.log("[v0] Login error:", error);
+
+      // Check for 412 status code in error response
+      if (isAxiosError<ApiResponse>(error)) {
+        const status = error.response?.status;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const responseData = error.response?.data as any;
+
+        const responseCode = responseData?.code || responseData?.data?.code;
+        const responseDetails =
+          responseData?.details || responseData?.data?.details || "";
+
+        // Check for 412 status code or specific error message
+        const isUnverified =
+          status === 412 ||
+          responseCode === 412 ||
+          (typeof responseDetails === "string" &&
+            (responseDetails.includes("Your account is not verified") ||
+              responseDetails.includes("verification email has been sent")));
+
+        if (isUnverified) {
+          const userId = responseData?.userId || responseData?.data?.userId;
+          const errorMessage =
+            responseDetails ||
+            responseData?.message ||
+            "Your account is not verified. A verification email has been sent to your email. Please check your email and verify your account.";
+
+          if (userId) {
+            toast.error(
+              "Your account is not verified. Please check your email for verification code."
+            );
+            router.push(
+              `/auth/verify?userId=${userId}&redirect=${encodeURIComponent(redirectPath)}`
+            );
+            return;
+          } else {
+            toast.error(errorMessage);
+            return;
+          }
+        }
+      }
+
       const errorMessage = getErrorMessage(error, "Login failed");
       toast.error(errorMessage);
     } finally {

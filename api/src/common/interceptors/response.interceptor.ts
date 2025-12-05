@@ -28,6 +28,32 @@ export class ResponseInterceptor<T>
           return data;
         }
 
+        // Special handling for 412 unverified account response - preserve all fields including userId
+        if (
+          data &&
+          typeof data === 'object' &&
+          'code' in data &&
+          data.code === 412
+        ) {
+          // Debug logging to verify data contains userId
+          console.log('[ResponseInterceptor] Received 412 response. Data:', JSON.stringify(data, null, 2));
+          console.log('[ResponseInterceptor] userId in data:', data.userId);
+          
+          // Preserve all fields from the original data object, especially userId
+          const wrapped = {
+            error: false,
+            message: 'successful',
+            data: {
+              ...data, // Spread all properties to ensure userId and any other fields are preserved
+            },
+          };
+          
+          console.log('[ResponseInterceptor] Wrapped response:', JSON.stringify(wrapped, null, 2));
+          console.log('[ResponseInterceptor] userId in wrapped.data:', wrapped.data.userId);
+          
+          return wrapped;
+        }
+
         // Detect paginated responses
         const isPaginated =
           data &&

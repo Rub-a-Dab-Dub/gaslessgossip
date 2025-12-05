@@ -5,7 +5,9 @@ import {
   Param,
   HttpStatus,
   HttpCode,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -131,8 +133,13 @@ export class AuthController {
       },
     },
   })
-  login(@Body() body: LoginDto) {
-    return this.authService.login(body);
+  async login(@Body() body: LoginDto) {
+    const result = await this.authService.login(body);
+
+    // If the service returns a 412 code, the interceptor will handle wrapping it
+    // and preserving the userId. We just return the result and let NestJS handle it.
+    // The interceptor will detect code: 412 and preserve all fields including userId.
+    return result;
   }
 
   @Post('verify-email/:userId')
