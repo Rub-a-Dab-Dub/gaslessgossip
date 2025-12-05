@@ -165,13 +165,24 @@ export class AuthService {
       user,
     });
 
+    // Generate JWT token for automatic login after verification
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      username: user.username,
+      address: user.address,
+    };
+    const jwtToken = await this.jwtService.signAsync(payload);
+
     return {
       message: 'Email verified successfully',
       user: {
         id: user.id,
         username: user.username,
         email: user.email,
+        address: user.address,
       },
+      token: jwtToken,
     };
   }
 

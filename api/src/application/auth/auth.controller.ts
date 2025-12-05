@@ -5,9 +5,7 @@ import {
   Param,
   HttpStatus,
   HttpCode,
-  Res,
 } from '@nestjs/common';
-import { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -158,7 +156,8 @@ export class AuthController {
   @ApiBody({ type: VerifyEmailDto })
   @ApiResponse({
     status: 200,
-    description: 'Email verified successfully.',
+    description:
+      'Email verified successfully. Returns user data and JWT token for automatic login.',
     schema: {
       example: {
         message: 'Email verified successfully',
@@ -166,7 +165,9 @@ export class AuthController {
           id: 1,
           username: 'johndoe',
           email: 'john.doe@example.com',
+          address: '0x1234567890abcdef',
         },
+        token: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
       },
     },
   })

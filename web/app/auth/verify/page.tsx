@@ -111,11 +111,24 @@ export default function VerifyEmail() {
         return;
       }
 
-      toast.success("Email verified successfully!");
+      // Check if token and user data are returned for auto-login
+      const responseData = res.data as any;
+      const token = responseData?.data?.token || responseData?.token;
+      const userData = responseData?.data?.user || responseData?.user;
 
-      // After verification, attempt to login automatically
-      // The user will need to login again with their credentials
-      router.push(`/auth?redirect=${encodeURIComponent(redirectPath)}`);
+      if (token && userData) {
+        // Auto-login the user after successful verification
+        setToCookie("token", token);
+        setToLocalStorage("user", JSON.stringify(userData));
+        toast.success("Email verified successfully! Logging you in...");
+        
+        // Route to dashboard
+        router.push(redirectPath);
+      } else {
+        // Fallback: if token not provided, redirect to login
+        toast.success("Email verified successfully!");
+        router.push(`/auth?redirect=${encodeURIComponent(redirectPath)}`);
+      }
     } catch (error: unknown) {
       console.log("[v0] Verification error:", error);
       const errorMessage = getErrorMessage(error, "Verification failed");
