@@ -21,7 +21,8 @@ export interface PostPayload {
   medias?: string[];
   commentCount?: number;
   likeCount?: number;
-  author: { id: number; username: string; photo?: string | null };
+  author?: { id: number; username: string; photo?: string | null };
+  isAnonymous?: boolean;
 }
 
 @Injectable()
@@ -43,15 +44,15 @@ export class PostsService {
   }
 
   // Create a post
-  async createPost(userId: number, content: string, medias?: string[]) {
+  async createPost(userId: number, content: string, medias?: string[], isAnonymous: boolean = false) {
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    const post = this.postsRepository.create({ content, medias, author: user });
+    const post = this.postsRepository.create({ content, medias, author: user, isAnonymous });
     const savePost = await this.postsRepository.save(post);
     if (savePost.id) {
-      user.xp += CREATE_POST;
-      await this.usersRepository.save(user);
+      // Update user XP using query builder to avoid TypeORM's empty update issue
+      await this.usersRepository.increment({ id: userId }, 'xp', CREATE_POST);
       // Build payload to return and emit via SSE
       const payload: PostPayload = {
         id: savePost.id,
@@ -60,11 +61,12 @@ export class PostsService {
         medias: savePost.medias,
         commentCount: savePost.commentCount,
         likeCount: savePost.likeCount,
-        author: {
+        author: isAnonymous ? undefined : {
           id: user.id,
           username: user.username,
           photo: user.photo,
         },
+        isAnonymous,
       };
 
       // emit to SSE listeners
@@ -90,11 +92,12 @@ export class PostsService {
       commentCount: post.commentCount,
       likeCount: post.likeCount,
       hasLiked: userId ? !!post.likes?.some((l) => l.user?.id === userId) : false,
-      author: {
+      author: post.isAnonymous && post.author.id !== userId ? undefined : {
         id: post.author.id,
         username: post.author.username,
         photo: post.author.photo,
       },
+      isAnonymous: post.isAnonymous,
     }));
     return result;
   }
@@ -256,7 +259,7 @@ export class PostsService {
     if (!user) throw new NotFoundException('User not found');
 
     const posts = await this.postsRepository.find({
-      where: { author: { id: user.id } },
+      where: { author: { id: user.id }, isAnonymous: false },
       relations: ['author'],
       order: { createdAt: 'DESC' },
     });
@@ -272,6 +275,7 @@ export class PostsService {
         username: post.author.username,
         photo: post.author.photo,
       },
+      isAnonymous: post.isAnonymous,
     }));
     return result;
   }
@@ -304,6 +308,7 @@ export class PostsService {
         username: post.author.username,
         photo: post.author.photo,
       },
+      isAnonymous: post.isAnonymous,
     }));
     return result;
   }

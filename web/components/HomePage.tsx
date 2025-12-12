@@ -37,6 +37,9 @@ export default function HomePage() {
   const pendingPostsRef = useRef<any[]>([]);
   const [inflightLikes, setInflightLikes] = useState<Record<number, boolean>>({});
   const menuRef = useRef<HTMLDivElement>(null);
+  const [postComments, setPostComments] = useState<Record<number, any[]>>({});
+  const [loadingComments, setLoadingComments] = useState<Record<number, boolean>>({});
+  const [commentPage, setCommentPage] = useState<Record<number, number>>({});
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -135,7 +138,8 @@ export default function HomePage() {
     try {
       const res = await api.post(`/posts/${postId}/like`);
       if (res.data && !res.data.error) {
-        const msg = (res.data.message || '').toString().toLowerCase();
+        // The message is in res.data.data.message (wrapped by ResponseInterceptor)
+        const msg = (res.data.data?.message || res.data.message || '').toString().toLowerCase();
         setPosts((prev) => {
           const copy = [...prev];
           const p = { ...(copy[idx] || {}) };
@@ -178,8 +182,29 @@ export default function HomePage() {
     }
   };
 
+  const fetchComments = async (postId: number) => {
+    if (loadingComments[postId]) return;
+    setLoadingComments((s) => ({ ...s, [postId]: true }));
+    try {
+      const res = await api.get(`/posts/${postId}`);
+      if (res.data && !res.data.error) {
+        const post = res.data.data;
+        setPostComments((s) => ({ ...s, [postId]: post.comments || [] }));
+      }
+    } catch (err) {
+      toast.error('Failed to load comments');
+    } finally {
+      setLoadingComments((s) => ({ ...s, [postId]: false }));
+    }
+  };
+
   const toggleCommentBox = (postId: number) => {
-    setCommentOpen((s) => ({ ...s, [postId]: !s[postId] }));
+    const isOpening = !commentOpen[postId];
+    setCommentOpen((s) => ({ ...s, [postId]: isOpening }));
+    // Fetch comments when opening
+    if (isOpening && !postComments[postId]) {
+      fetchComments(postId);
+    }
   };
 
   const submitComment = async (postId: number, idx: number) => {
@@ -190,7 +215,8 @@ export default function HomePage() {
       if (res.data && !res.data.error) {
         toast.success('Comment added');
         setCommentText((s) => ({ ...s, [postId]: '' }));
-        setCommentOpen((s) => ({ ...s, [postId]: false }));
+        // Refresh comments to show the new one
+        await fetchComments(postId);
         // increment comment count
         setPosts((prev) => {
           const copy = [...prev];
@@ -305,7 +331,7 @@ export default function HomePage() {
                           disabled={!!inflightLikes[post.id]}
                           className={`flex items-center gap-2 ${post.hasLiked ? 'text-red-400' : 'text-secondary'} ${inflightLikes[post.id] ? 'opacity-60 pointer-events-none' : 'hover:text-red-400'}`}
                         >
-                          <Heart size={18} />
+                          <Heart size={18} fill={post.hasLiked ? "currentColor" : "none"} />
                           <span className="text-tertiary">
                             {post.likeCount ?? post.likes?.length ?? 0}
                           </span>
@@ -347,6 +373,53 @@ export default function HomePage() {
                             >
                               Comment
                             </button>
+                          </div>
+
+                          {/* Display Comments */}
+                          <div className="mt-4 space-y-3 max-h-96 overflow-y-auto">
+                            {loadingComments[post.id] ? (
+                              <div className="text-center text-gray-500 text-sm">Loading comments...</div>
+                            ) : postComments[post.id] && postComments[post.id].length > 0 ? (
+                              postComments[post.id].map((comment: any) => (
+                                <div key={comment.id} className="bg-gray-800/50 rounded-lg p-3">
+                                  <div className="flex items-start gap-2">
+                                    <div className="w-8 h-8 rounded-full bg-gray-700 flex-shrink-0" />
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-sm font-semibold text-white">
+                                          {comment.author?.username || 'Anonymous'}
+                                        </span>
+                                        <span className="text-xs text-gray-500">
+                                          {comment.createdAt ? new Date(comment.createdAt).toLocaleString() : ''}
+                                        </span>
+                                      </div>
+                                      <p className="text-sm text-gray-300 mt-1">{comment.content}</p>
+                                      
+                                      {/* Nested Replies */}
+                                      {comment.replies && comment.replies.length > 0 && (
+                                        <div className="mt-2 ml-4 space-y-2 border-l-2 border-gray-700 pl-3">
+                                          {comment.replies.map((reply: any) => (
+                                            <div key={reply.id} className="bg-gray-900/50 rounded p-2">
+                                              <div className="flex items-center gap-2">
+                                                <span className="text-xs font-semibold text-white">
+                                                  {reply.author?.username || 'Anonymous'}
+                                                </span>
+                                                <span className="text-xs text-gray-500">
+                                                  {reply.createdAt ? new Date(reply.createdAt).toLocaleString() : ''}
+                                                </span>
+                                              </div>
+                                              <p className="text-xs text-gray-300 mt-1">{reply.content}</p>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))
+                            ) : (
+                              <div className="text-center text-gray-500 text-sm">No comments yet</div>
+                            )}
                           </div>
                         </div>
                       )}

@@ -143,7 +143,7 @@ export default function PostCard({ post, onEdit, onDelete }: PostCardProps) {
               : "text-secondary hover:text-red-400"
           }`}
         >
-          <Heart size={18} />
+          <Heart size={18} fill={liked ? "currentColor" : "none"} />
           <span className="text-tertiary">{likes}</span>
         </button>
 

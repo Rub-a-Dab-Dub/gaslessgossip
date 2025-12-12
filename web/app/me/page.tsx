@@ -59,9 +59,14 @@ export default function Me() {
 
     try {
       setSaving(true);
-      const payload = { ...form };
-      delete payload.id;
-      delete payload.xp;
+      // Only send fields that are allowed in UpdateProfileDto
+      const payload: any = {};
+      if (form.photo !== undefined) payload.photo = form.photo;
+      if (form.address !== undefined) payload.address = form.address;
+      if (form.title !== undefined) payload.title = form.title;
+      if (form.about !== undefined) payload.about = form.about;
+      if (form.username !== undefined) payload.username = form.username;
+      if (form.email !== undefined) payload.email = form.email;
 
       const res = await api.put<ApiResponse>("users/profile", payload);
       if (res.data.error) {

@@ -10,6 +10,9 @@ export class CreatePostDto {
   @IsArray()
   @ApiPropertyOptional({ type: [String] })
   medias?: string[];
+
+  @IsOptional()
+  isAnonymous?: boolean | string;
 }
 
 export class EditPostDto {

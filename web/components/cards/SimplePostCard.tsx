@@ -92,7 +92,7 @@ export default function SimplePostCard({ post, user }: SimplePostCardProps) {
                     className={`flex items-center gap-2 transition-colors ${liked ? "text-red-500 hover:text-red-400" : "text-secondary hover:text-red-400"
                         }`}
                 >
-                    <Heart size={18} />
+                    <Heart size={18} fill={liked ? "currentColor" : "none"} />
                     <span className="text-tertiary">{likes}</span>
                 </button>
 

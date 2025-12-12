@@ -55,7 +55,8 @@ export class PostsController {
       medias = medias.concat(uploaded.map((u) => u.url));
     }
 
-    return this.postsService.createPost(req.user.userId, dto.content, medias);
+    const isAnonymous = dto.isAnonymous === 'true' || dto.isAnonymous === true;
+    return this.postsService.createPost(req.user.userId, dto.content, medias, isAnonymous);
   }
 
   @Sse('stream')

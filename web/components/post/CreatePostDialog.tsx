@@ -25,6 +25,7 @@ export default function CreatePostDialog({
   const [content, setContent] = useState("");
   const [isPosting, setIsPosting] = useState(false);
   const [isPosted, setIsPosted] = useState(false);
+  const [isAnonymous, setIsAnonymous] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -45,6 +46,7 @@ export default function CreatePostDialog({
       setIsPosting(true);
       const form = new FormData();
       form.append("content", content);
+      form.append("isAnonymous", String(isAnonymous));
       selectedFiles.forEach((f) => form.append("files", f));
 
       const res = await api.post<ApiResponse>(`posts`, form, {
@@ -198,6 +200,20 @@ export default function CreatePostDialog({
                     Post
                   </span>
                 </button>
+              </div>
+
+              {/* Anonymous Toggle */}
+              <div className="flex items-center gap-2 mt-4 text-white">
+                <input
+                  type="checkbox"
+                  id="anonymous-toggle"
+                  checked={isAnonymous}
+                  onChange={(e) => setIsAnonymous(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-600 focus:ring-teal-500 text-teal-500 bg-transparent"
+                />
+                <label htmlFor="anonymous-toggle" className="text-sm cursor-pointer select-none">
+                  Post anonymously
+                </label>
               </div>
             </div>
           </DialogPanel>

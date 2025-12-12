@@ -22,6 +22,9 @@ export class Post {
   @Column('text', { array: true, nullable: true })
   medias: string[];
 
+  @Column({ default: false })
+  isAnonymous: boolean;
+
   @ManyToOne(() => User, (user) => user.posts)
   author: User;
 
