@@ -22,7 +22,7 @@ export class FilesService {
     this.r2 = this.r2Service.exposeR2Credentials();
   }
 
-  async uploadFile(file: any, uploader: User) {
+  async uploadFile(file: any, uploader: User | { userId: number }) {
     const bucket = this.r2Service.getBucketName();
     const key = `${Date.now()}_${uuidv4()}_${file.originalname}`;
 
@@ -43,14 +43,19 @@ export class FilesService {
       { expiresIn: 60 * 60 * 24 * 7 },
     );
 
-    const saved = await this.fileRepository.save({
+    // Get the userId from either a User entity or a JWT payload
+    const uploaderId = 'userId' in uploader ? uploader.userId : uploader.id;
+
+    const fileEntity = this.fileRepository.create({
       filename: file.originalname,
       url: signedUrl,
       storageKey: key,
       mimetype: file.mimetype,
       size: file.size,
-      uploader,
-    } as Partial<File>);
+      uploader: { id: uploaderId } as User,
+    });
+
+    const saved = await this.fileRepository.save(fileEntity);
 
     return saved;
   }
