@@ -180,6 +180,7 @@ export default function Me() {
               onClose={() => setShowEdit(false)}
               onSave={handleSave}
               saving={saving}
+              onPhotoChange={(url) => setForm((prev) => ({ ...prev, photo: url }))}
             />
           )}
         </>
@@ -324,6 +325,7 @@ function EditProfileModal({
   onClose,
   onSave,
   saving,
+  onPhotoChange,
 }: {
   form: Partial<IUser>;
   onChange: (
@@ -332,10 +334,52 @@ function EditProfileModal({
   onClose: () => void;
   onSave: () => void;
   saving: boolean;
+  onPhotoChange?: (url: string) => void;
 }) {
+  const [uploading, setUploading] = useState(false);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(form.photo || null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Show preview immediately
+    const previewUrl = URL.createObjectURL(file);
+    setPhotoPreview(previewUrl);
+
+    try {
+      setUploading(true);
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await api.post<ApiResponse>("files", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      if (res.data.error) {
+        toast.error(res.data.message ?? "Failed to upload photo");
+        setPhotoPreview(form.photo || null);
+        return;
+      }
+
+      const uploadedUrl = res.data.data?.url;
+      if (uploadedUrl && onPhotoChange) {
+        onPhotoChange(uploadedUrl);
+      }
+      toast.success("Photo uploaded");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to upload photo");
+      setPhotoPreview(form.photo || null);
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-teal-800/75 w-full max-w-lg border border-teal-300 rounded-4xl p-8 shadow-xl relative">
+      <div className="bg-teal-800/75 w-full max-w-lg border border-teal-300 rounded-4xl p-8 shadow-xl relative max-h-[90vh] overflow-y-auto">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 text-emerald-300 hover:text-emerald-400"
@@ -348,6 +392,53 @@ function EditProfileModal({
         </h2>
         <div className="text-sm font-normal text-emerald-200 mb-4">
           Update your account info
+        </div>
+
+        {/* Profile Photo Upload */}
+        <div className="mb-6 flex flex-col items-center">
+          <div className="relative">
+            <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-700 border-2 border-emerald-500">
+              {photoPreview ? (
+                <img
+                  src={photoPreview}
+                  alt="Profile"
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-400">
+                  <svg className="w-12 h-12" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M24 20.993V24H0v-2.996A14.977 14.977 0 0112.004 15c4.9 0 9.26 2.35 12 5.99zM16 9a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="absolute bottom-0 right-0 bg-emerald-500 text-black rounded-full p-2 hover:bg-emerald-400 disabled:opacity-50"
+            >
+              {uploading ? (
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              )}
+            </button>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handlePhotoUpload}
+            className="hidden"
+          />
+          <p className="text-xs text-zinc-400 mt-2">Click to change photo</p>
         </div>
 
         {["email", "username", "title"].map((field) => (
@@ -384,7 +475,7 @@ function EditProfileModal({
             Cancel
           </button>
           <button
-            disabled={saving}
+            disabled={saving || uploading}
             onClick={onSave}
             className="px-6 py-2 rounded-full bg-emerald-500 text-black font-medium hover:bg-emerald-400 transition disabled:opacity-50"
           >
